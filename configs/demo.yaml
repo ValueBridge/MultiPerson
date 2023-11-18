@@ -7,8 +7,9 @@ YOLO:
   target_height: 576
   target_width: 768
   n_classes: 80
-  weight_old_file: "YOLOv4/weight/yolov4.pth"
-  weight_file: "YOLOv4/weight/new_yolov4.pth"
+  # weight_old_file: "YOLOv4/weight/yolov4.pth"
+  # weight_file: "YOLOv4/weight/new_yolov4.pth"
+  weight_file: "YOLOv4/weight/yolov4.pth"
   namesfile: "YOLOv4/data/coco.names" # "YOLOv4/data/voc.names"
 
 PoseEstimator:
@@ -46,4 +47,3 @@ SmplTR:
   dim_head: 64
   dropout: 0
   max_num_person: 3
-  
