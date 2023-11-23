@@ -62,14 +62,17 @@ def save_mesh_rendering(renderer, verts, boxes, cam, orig_height, orig_width, nu
     cv2.imwrite(osp.join(mesh_results_folder, f"mesh.jpg"), render_img)
 
 
-def save_mesh_rendering_v2(renderer, verts, boxes, cam, orig_height, orig_width, num_person, mesh_results_folder):
+def save_mesh_rendering_v2(
+        renderer, verts, boxes, cam, orig_height, orig_width, num_person, mesh_results_folder,
+        original_image):
 
-    orig_img = np.ones((orig_height, orig_width, 3))*255
     render_img = None
 
     cmap = plt.get_cmap('rainbow')
     colors = [cmap(i) for i in np.linspace(0, 1, num_person + 2)]
     colors = [(c[2], c[1], c[0]) for c in colors]
+
+    people_renders = []
 
     for person_id in range(num_person):
 
@@ -80,22 +83,35 @@ def save_mesh_rendering_v2(renderer, verts, boxes, cam, orig_height, orig_width,
             img_height=orig_height
         )
 
-        if render_img is None:
-            render_img = renderer.render(
-                orig_img,
-                verts[person_id],
-                cam=orig_cam[0],
-                color=colors[person_id],
-            )
-        else:
-            render_img = renderer.render(
-                render_img,
-                verts[person_id],
+        render_img = renderer.render(
+                verts=verts[person_id],
                 cam=orig_cam[0],
                 color=colors[person_id],
             )
 
-    cv2.imwrite(osp.join(mesh_results_folder, f"mesh.jpg"), render_img)
+        people_renders.append(render_img)
+
+        cv2.imwrite(osp.join(mesh_results_folder, f"mesh_{person_id}.jpg"), render_img)
+
+    # Compose all renders in such a way that later renders are on top of previous ones
+    composite_renders_image = np.zeros_like(original_image)
+
+    for person_render in people_renders:
+
+        mask = (person_render[:, :, -1] > 0)[:, :, np.newaxis]
+
+        composite_renders_image = np.clip(0, 255, ((1 - mask) *composite_renders_image) + person_render)
+
+    # composite_renders_image = np.clip(0, 255, np.sum(people_renders, axis=0))
+
+    cv2.imwrite(osp.join(mesh_results_folder, f"mesh.jpg"), composite_renders_image)
+
+    # Overlay composite_renders_image on original_image
+    renders_mask = mask = (composite_renders_image[:, :, -1] > 0)[:, :, np.newaxis]
+
+    overlay_image = np.clip(0, 255, (renders_mask * composite_renders_image) + ((1 - renders_mask) * original_image))
+
+    cv2.imwrite(osp.join(mesh_results_folder, f"mesh_on_original_image.jpg"), overlay_image)
 
 
 def save_mesh_pkl(axis_angle, betas, cam, num_person, mesh_results_folder):

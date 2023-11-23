@@ -162,7 +162,7 @@ class HeadlessRenderer:
         light_pose[:3, 3] = [1, 1, 2]
         self.scene.add(light, pose=light_pose)
 
-    def render(self, img, verts, cam, angle=None, axis=None, mesh_filename=None, color=[1.0, 1.0, 0.9]):
+    def render(self, verts, cam, angle=None, axis=None, mesh_filename=None, color=[0, 0, 0]):
 
         mesh = trimesh.Trimesh(vertices=verts, faces=self.faces, process=False)
 
@@ -204,12 +204,7 @@ class HeadlessRenderer:
 
         rgb, _ = self.renderer.render(self.scene, flags=render_flags)
 
-        valid_mask = (rgb[:, :, -1] > 0)[:, :, np.newaxis]
-
-        # output_img = (rgb[:, :, :-1] * valid_mask) + ((1 - valid_mask) * img)
-        output_img = (rgb * valid_mask) + ((1 - valid_mask) * img)
-
-        image = output_img.astype(np.uint8)
+        image = rgb.astype(np.uint8)
 
         self.scene.remove_node(mesh_node)
         self.scene.remove_node(cam_node)

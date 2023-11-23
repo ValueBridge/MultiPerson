@@ -21,6 +21,8 @@ def visualize_mesh_predictions(_context, config_path):
 
     import cv2
     import numpy as np
+    import shutil
+
     import torch
 
     import YOLOv4.tool.torch_utils
@@ -41,6 +43,8 @@ def visualize_mesh_predictions(_context, config_path):
     demo_config_path = "configs/demo.yaml"
 
     demo_cfg = lib.utils.file_utils.update_config(demo_config_path)
+
+    shutil.rmtree(demo_cfg.SAVE_FOLDER["mesh_results_folder"], ignore_errors=True)
 
     namesfile = demo_cfg.YOLO.namesfile
     height = demo_cfg.YOLO.target_height
@@ -133,4 +137,4 @@ def visualize_mesh_predictions(_context, config_path):
         #     renderer, verts, refined_boxes, cam, orig_height, orig_width, num_person, mesh_results_folder)
 
         lib.utils.output_utils.save_mesh_rendering_v2(
-            renderer, verts, refined_boxes, cam, orig_height, orig_width, num_person, mesh_results_folder)
+            renderer, verts, refined_boxes, cam, orig_height, orig_width, num_person, mesh_results_folder, orig_img)
