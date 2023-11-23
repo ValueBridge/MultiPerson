@@ -59,58 +59,62 @@ if __name__ == '__main__':
     orig_height, orig_width = orig_img.shape[:2]
     renderer = Renderer(smpl=smpl_layer, resolution=(orig_width, orig_height), orig_img=True)
 
-    # # Inference input size is 416*416 does not mean training size is the same
-    # # Training size could be 608*608 or even other sizes
-    # # Optional inference sizes:
-    # #   Hight in {320, 416, 512, 608, ... 320 + 96 * n}
-    # #   Width in {320, 416, 512, 608, ... 320 + 96 * m}
-    # yolo_input_img = cv2.resize(orig_img, (width, height))
-    # yolo_input_img = cv2.cvtColor(yolo_input_img, cv2.COLOR_BGR2RGB)
+    # Inference input size is 416*416 does not mean training size is the same
+    # Training size could be 608*608 or even other sizes
+    # Optional inference sizes:
+    #   Hight in {320, 416, 512, 608, ... 320 + 96 * n}
+    #   Width in {320, 416, 512, 608, ... 320 + 96 * m}
+    yolo_input_img = cv2.resize(orig_img, (width, height))
+    yolo_input_img = cv2.cvtColor(yolo_input_img, cv2.COLOR_BGR2RGB)
 
-    # for i in range(2):  # This 'for' loop is for speed check
-    #                     # Because the first iteration is usually longer
-    #     boxes = do_detect(yolo, yolo_input_img, 0.4, 0.6, use_cuda=True)
+    for i in range(2):  # This 'for' loop is for speed check
+                        # Because the first iteration is usually longer
+        boxes = do_detect(yolo, yolo_input_img, 0.4, 0.6, use_cuda=True)
 
-    # class_names = load_class_names(namesfile)
-    # img_patch_list, refined_boxes, trans_invs = split_boxes_cv2(orig_img, boxes[0], split_images_folder, class_names)
-    # refined_boxes = np.array(refined_boxes)
+    class_names = load_class_names(namesfile)
+    img_patch_list, refined_boxes, trans_invs = split_boxes_cv2(orig_img, boxes[0], split_images_folder, class_names)
+    refined_boxes = np.array(refined_boxes)
 
-    # num_person = len(img_patch_list)
-    # num_person = min(num_person, max_num_person)
+    num_person = len(img_patch_list)
+    num_person = min(num_person, max_num_person)
 
-    # feature_dump = torch.zeros(1, max_num_person, 2048).float().cuda()
-    # rot6d_dump = torch.zeros(1, max_num_person, 24, 6).float().cuda()
-    # betas_dump = torch.zeros(1, max_num_person, 10).float().cuda()
+    feature_dump = torch.zeros(1, max_num_person, 2048).float().cuda()
+    rot6d_dump = torch.zeros(1, max_num_person, 24, 6).float().cuda()
+    betas_dump = torch.zeros(1, max_num_person, 10).float().cuda()
 
-    # j2ds_pixel = []
-    # for person_id, img_patch in enumerate(img_patch_list[:num_person]):
-    #     img_plot, img_pe_input, intrinsic = get_pose_estimator_input(img_patch, FLAGS)
+    j2ds_pixel = []
 
-    #     with torch.no_grad():
-    #         j2d, j3d, j3d_abs, skeleton_indices, edges \
-    #             = pose_estimator(img_pe_input, intrinsic, intrinsic)
-    #     save_3d_joints(j3d_abs, edges, pose_results_folder, person_id)
-    #     save_2d_joints(img_plot, j2d, edges, pose_results_folder, person_id)
+    for person_id, img_patch in enumerate(img_patch_list[:num_person]):
 
-    #     img_ik_input = get_ik_input(img_patch, demo_cfg, FLAGS)
-    #     j3ds_abs_meter = j3d_abs / 1000
-    #     ik_net_output = ik_net(img_ik_input, j3ds_abs_meter)
-    #     rot6d_ik_net = ik_net_output.pred_rot6d
-    #     betas_ik_net = ik_net_output.pred_shape
+        img_plot, img_pe_input, intrinsic = get_pose_estimator_input(img_patch, FLAGS)
 
-    #     img_fe_input = get_feature_extractor_input(img_patch)
+        with torch.no_grad():
 
-    #     img_feature = feature_extractor.extract(img_fe_input)
-    #     feature_dump[0][person_id] = img_feature[0]
-    #     rot6d_dump[0][person_id] = rot6d_ik_net[0]
-    #     betas_dump[0][person_id] = betas_ik_net[0]
+            j2d, j3d, j3d_abs, skeleton_indices, edges = pose_estimator(img_pe_input, intrinsic, intrinsic)
 
-    # with torch.no_grad():
-    #     refined_rot6d, refined_betas, refined_cam = smplTR(feature_dump, rot6d_dump, betas_dump)
-    #     axis_angle, rot6d, betas, cam, verts, faces \
-    #         = process_output(smpl_layer, refined_rot6d, refined_betas, refined_cam)
+        save_3d_joints(j3d_abs, edges, pose_results_folder, person_id)
+        save_2d_joints(img_plot, j2d, edges, pose_results_folder, person_id)
 
-    # num_person = refined_boxes.shape[0]
-    # save_mesh_obj(verts, faces, num_person, mesh_results_folder)
-    # save_mesh_rendering(renderer, verts, refined_boxes, cam, orig_height, orig_width, num_person, mesh_results_folder)
+        img_ik_input = get_ik_input(img_patch, demo_cfg, FLAGS)
+        j3ds_abs_meter = j3d_abs / 1000
+        ik_net_output = ik_net(img_ik_input, j3ds_abs_meter)
+        rot6d_ik_net = ik_net_output.pred_rot6d
+        betas_ik_net = ik_net_output.pred_shape
+
+        img_fe_input = get_feature_extractor_input(img_patch)
+
+        img_feature = feature_extractor.extract(img_fe_input)
+        feature_dump[0][person_id] = img_feature[0]
+        rot6d_dump[0][person_id] = rot6d_ik_net[0]
+        betas_dump[0][person_id] = betas_ik_net[0]
+
+    with torch.no_grad():
+        refined_rot6d, refined_betas, refined_cam = smplTR(feature_dump, rot6d_dump, betas_dump)
+
+        axis_angle, rot6d, betas, cam, verts, faces = process_output(
+            smpl_layer, refined_rot6d, refined_betas, refined_cam)
+
+    num_person = refined_boxes.shape[0]
+    save_mesh_obj(verts, faces, num_person, mesh_results_folder)
+    save_mesh_rendering(renderer, verts, refined_boxes, cam, orig_height, orig_width, num_person, mesh_results_folder)
     # save_mesh_pkl(axis_angle, betas, cam, num_person, mesh_results_folder)
