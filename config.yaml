@@ -3,3 +3,6 @@ data_dir: "/data"
 
 logging_output_directory_on_host: "/tmp/multi_person"
 logging_path: "/tmp/log.html"
+
+demo:
+  image_path: "demo_image/demo1.jpg"

@@ -34,7 +34,7 @@ def save_mesh_obj(verts, faces, num_person, mesh_results_folder):
 def save_mesh_rendering(renderer, verts, boxes, cam, orig_height, orig_width, num_person, mesh_results_folder):
     orig_img = np.ones((orig_height, orig_width, 3))*255
     render_img = None
-    
+
     cmap = plt.get_cmap('rainbow')
     colors = [cmap(i) for i in np.linspace(0, 1, num_person + 2)]
     colors = [(c[2], c[1], c[0]) for c in colors]
@@ -61,6 +61,43 @@ def save_mesh_rendering(renderer, verts, boxes, cam, orig_height, orig_width, nu
             )
     cv2.imwrite(osp.join(mesh_results_folder, f"mesh.jpg"), render_img)
 
+
+def save_mesh_rendering_v2(renderer, verts, boxes, cam, orig_height, orig_width, num_person, mesh_results_folder):
+
+    orig_img = np.ones((orig_height, orig_width, 3))*255
+    render_img = None
+
+    cmap = plt.get_cmap('rainbow')
+    colors = [cmap(i) for i in np.linspace(0, 1, num_person + 2)]
+    colors = [(c[2], c[1], c[0]) for c in colors]
+
+    for person_id in range(num_person):
+
+        orig_cam = convert_crop_cam_to_orig_img(
+            cam=cam[person_id:person_id+1].detach().cpu().numpy(),
+            bbox=boxes[person_id:person_id+1],
+            img_width=orig_width,
+            img_height=orig_height
+        )
+
+        if render_img is None:
+            render_img = renderer.render(
+                orig_img,
+                verts[person_id],
+                cam=orig_cam[0],
+                color=colors[person_id],
+            )
+        else:
+            render_img = renderer.render(
+                render_img,
+                verts[person_id],
+                cam=orig_cam[0],
+                color=colors[person_id],
+            )
+
+    cv2.imwrite(osp.join(mesh_results_folder, f"mesh.jpg"), render_img)
+
+
 def save_mesh_pkl(axis_angle, betas, cam, num_person, mesh_results_folder):
     for person_id in range(num_person):
         data = {
@@ -84,15 +121,15 @@ def save_3d_joints(j3d, edges, pose_results_folder, person_id):
     pose_ax.set_xlim3d(-1500, 1500)
     pose_ax.set_zlim3d(-1500, 1500)
     pose_ax.set_ylim3d(0, 3000)
-    
+
     for j in j3d:
         pose_ax.scatter(j[0], j[1], j[2], c='r', s=2)
 
     for l, edge in enumerate(edges):
         pose_ax.plot(
-            [j3d[edge[0]][0], j3d[edge[1]][0]], 
-            [j3d[edge[0]][1], j3d[edge[1]][1]], 
-            [j3d[edge[0]][2], j3d[edge[1]][2]], 
+            [j3d[edge[0]][0], j3d[edge[1]][0]],
+            [j3d[edge[0]][1], j3d[edge[1]][1]],
+            [j3d[edge[0]][2], j3d[edge[1]][2]],
             c=colors[l]
         )
 
@@ -100,19 +137,19 @@ def save_3d_joints(j3d, edges, pose_results_folder, person_id):
 
 def save_2d_joints(img, j2d, edges, pose_results_folder, person_id):
     j2d = j2d[0].cpu().numpy()
-    
+
     cmap = plt.get_cmap('rainbow')
     colors = [cmap(i) for i in np.linspace(0, 1, len(edges) + 2)]
     colors = [(c[2] * 255, c[1] * 255, c[0] * 255) for c in colors]
 
     for j in j2d:
         cv2.circle(img, (int(j[0]), int(j[1])), 2, (0, 0, 255), -1)
-    
+
     for l, edge in enumerate(edges):
         cv2.line(img,
-            [int(j2d[edge[0]][0]), int(j2d[edge[0]][1])], 
-            [int(j2d[edge[1]][0]), int(j2d[edge[1]][1])], 
-            colors[l], 
+            [int(j2d[edge[0]][0]), int(j2d[edge[0]][1])],
+            [int(j2d[edge[1]][0]), int(j2d[edge[1]][1])],
+            colors[l],
             2
         )
     cv2.imwrite(osp.join(pose_results_folder, f"image{person_id}_2d.jpg"), img[..., ::-1])
