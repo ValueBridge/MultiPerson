@@ -66,11 +66,6 @@ def visualize_mesh_predictions(_context, config_path):
     original_img = cv2.imread(image_path)
     orig_height, orig_width = original_img.shape[:2]
 
-    # renderer = lib.utils.renderer.Renderer(smpl=smpl_layer, resolution=(orig_width, orig_height), orig_img=True)
-
-    renderer = lib.utils.renderer.HeadlessRenderer(
-        smpl=smpl_layer, resolution=(orig_width, orig_height), orig_img=True)
-
     # Inference input size is 416*416 does not mean training size is the same
     # Training size could be 608*608 or even other sizes
     # Optional inference sizes:
@@ -82,17 +77,17 @@ def visualize_mesh_predictions(_context, config_path):
     # This 'for' loop is for speed check
     # Because the first iteration is usually longer
     for i in range(2):
-        category_boxes = YOLOv4.tool.torch_utils.do_detect(yolo, yolo_input_img, 0.4, 0.6, use_cuda=True)
+        relative_category_boxes = YOLOv4.tool.torch_utils.do_detect(yolo, yolo_input_img, 0.4, 0.6, use_cuda=True)
 
     class_names = YOLOv4.tool.utils.load_class_names(namesfile)
 
-    img_patch_list, refined_people_center_boxes, inverse_transforms = lib.utils.img_utils.split_boxes_cv2(
+    img_patch_list, transformed_people_center_boxes, inverse_transforms = lib.utils.img_utils.split_boxes_cv2(
         img=original_img,
-        boxes=category_boxes[0],
+        relative_boxes=relative_category_boxes[0],
         save_folder=split_images_folder,
         class_names=class_names)
 
-    refined_people_center_boxes = np.array(refined_people_center_boxes)
+    transformed_people_center_boxes = np.array(transformed_people_center_boxes)
 
     num_person = len(img_patch_list)
     num_person = min(num_person, max_num_person)
@@ -101,7 +96,8 @@ def visualize_mesh_predictions(_context, config_path):
     rot6d_dump = torch.zeros(1, max_num_person, 24, 6).float().cuda()
     betas_dump = torch.zeros(1, max_num_person, 10).float().cuda()
 
-    j2ds_pixel = []
+    j2ds_per_person = []
+    edges_per_person = []
 
     for person_id, img_patch in enumerate(img_patch_list[:num_person]):
 
@@ -113,6 +109,9 @@ def visualize_mesh_predictions(_context, config_path):
         with torch.no_grad():
 
             j2d, j3d, j3d_abs, skeleton_indices, edges = pose_estimator(img_pe_input, intrinsic, intrinsic)
+
+            j2ds_per_person.append(np.squeeze(j2d.detach().cpu().numpy()))
+            edges_per_person.append(edges)
 
         lib.utils.output_utils.save_3d_joints(j3d_abs, edges, pose_results_folder, person_id)
         lib.utils.output_utils.save_2d_joints(img_plot, j2d, edges, pose_results_folder, person_id)
@@ -138,17 +137,23 @@ def visualize_mesh_predictions(_context, config_path):
         axis_angle, rot6d, betas, cameras, vertices_batch, faces_batch = lib.utils.output_utils.process_output(
             smpl_layer, refined_rot6d, refined_betas, refined_cam)
 
-    num_person = refined_people_center_boxes.shape[0]
+    num_person = transformed_people_center_boxes.shape[0]
 
     lib.utils.output_utils.save_mesh_obj(vertices_batch, faces_batch, num_person, mesh_results_folder)
+
+    renderer = lib.utils.renderer.HeadlessRenderer(
+        smpl=smpl_layer, resolution=(orig_width, orig_height), orig_img=True)
 
     lib.utils.output_utils.save_mesh_rendering_v2(
         renderer=renderer,
         vertices_batch=vertices_batch,
-        boxes=refined_people_center_boxes,
+        boxes=transformed_people_center_boxes,
         cameras=cameras,
         orig_height=orig_height,
         orig_width=orig_width,
         num_person=num_person,
         mesh_results_folder=mesh_results_folder,
-        original_image=original_img)
+        original_image=original_img,
+        inverse_transforms=inverse_transforms,
+        j2ds_per_person=j2ds_per_person,
+        edges_per_person=edges_per_person)
