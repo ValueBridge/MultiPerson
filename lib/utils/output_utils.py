@@ -1,15 +1,18 @@
 import os.path as osp
-import trimesh
+
 import cv2
-import pickle
-import numpy as np
+import icecream
 import matplotlib.pyplot as plt
+import numpy as np
+import pickle
+import trimesh
 
 from lib.utils.img_utils import convert_crop_cam_to_orig_img
 from lib.utils.pose_utils import (
     matrix_to_axis_angle,
     rot6d_to_rotmat,
 )
+
 
 def process_output(smpl_layer, rot6d, betas, cam):
     rot6d = rot6d.reshape(-1, 144)
@@ -40,7 +43,7 @@ def save_mesh_rendering(renderer, verts, boxes, cam, orig_height, orig_width, nu
     colors = [(c[2], c[1], c[0]) for c in colors]
     for person_id in range(num_person):
         orig_cam = convert_crop_cam_to_orig_img(
-            cam=cam[person_id:person_id+1].detach().cpu().numpy(),
+            camera=cam[person_id:person_id+1].detach().cpu().numpy(),
             bbox=boxes[person_id:person_id+1],
             img_width=orig_width,
             img_height=orig_height
@@ -64,9 +67,7 @@ def save_mesh_rendering(renderer, verts, boxes, cam, orig_height, orig_width, nu
 
 def save_mesh_rendering_v2(
         renderer, vertices_batch, boxes, cameras, orig_height, orig_width, num_person, mesh_results_folder,
-        original_image):
-
-    render_img = None
+        original_image, inverse_transforms, j2ds_per_person, edges_per_person):
 
     color_map = plt.get_cmap('rainbow')
     colors = [color_map(i) for i in np.linspace(0, 1, num_person + 2)]
@@ -77,7 +78,7 @@ def save_mesh_rendering_v2(
     for person_id in range(num_person):
 
         orig_cam = convert_crop_cam_to_orig_img(
-            cam=cameras[person_id:person_id+1].detach().cpu().numpy(),
+            camera=cameras[person_id:person_id+1].detach().cpu().numpy(),
             bbox=boxes[person_id:person_id+1],
             img_width=orig_width,
             img_height=orig_height
@@ -110,6 +111,21 @@ def save_mesh_rendering_v2(
     renders_mask = mask = (composite_renders_image[:, :, -1] > 0)[:, :, np.newaxis]
 
     overlay_image = np.clip(0, 255, (renders_mask * composite_renders_image) + ((1 - renders_mask) * original_image))
+    overlay_image = overlay_image.astype(np.uint8)
+
+    # Draw 2d joints on overlay_image
+    for person_id in range(num_person):
+
+        j2d = j2ds_per_person[person_id]
+        edges = edges_per_person[person_id]
+
+        # Add a column of ones to j2d
+        j2d = np.concatenate([j2d, np.ones((j2d.shape[0], 1))], axis=1)
+
+        # Convert j2d to original image coordinates using inverse_transform
+        j2d_transformed = np.matmul(j2d, inverse_transforms[person_id].T)
+
+        overlay_image = draw_2d_joint(overlay_image, j2d_transformed, edges, thickness=8)
 
     cv2.imwrite(osp.join(mesh_results_folder, f"mesh_on_original_image.jpg"), overlay_image)
 
@@ -151,8 +167,10 @@ def save_3d_joints(j3d, edges, pose_results_folder, person_id):
 
     plt.savefig(osp.join(pose_results_folder, f"image{person_id}_3d.jpg"))
 
-def save_2d_joints(img, j2d, edges, pose_results_folder, person_id):
-    j2d = j2d[0].cpu().numpy()
+
+def draw_2d_joint(img, j2d, edges, thickness):
+
+    img = np.copy(img)
 
     cmap = plt.get_cmap('rainbow')
     colors = [cmap(i) for i in np.linspace(0, 1, len(edges) + 2)]
@@ -166,6 +184,14 @@ def save_2d_joints(img, j2d, edges, pose_results_folder, person_id):
             [int(j2d[edge[0]][0]), int(j2d[edge[0]][1])],
             [int(j2d[edge[1]][0]), int(j2d[edge[1]][1])],
             colors[l],
-            2
+            thickness
         )
+
+    return img
+
+def save_2d_joints(img, j2d, edges, pose_results_folder, person_id):
+
+    j2d = j2d[0].cpu().numpy()
+
+    img = draw_2d_joint(img, j2d, edges, thickness=4)
     cv2.imwrite(osp.join(pose_results_folder, f"image{person_id}_2d.jpg"), img[..., ::-1])
