@@ -63,13 +63,13 @@ def save_mesh_rendering(renderer, verts, boxes, cam, orig_height, orig_width, nu
 
 
 def save_mesh_rendering_v2(
-        renderer, verts, boxes, cam, orig_height, orig_width, num_person, mesh_results_folder,
+        renderer, vertices_batch, boxes, cameras, orig_height, orig_width, num_person, mesh_results_folder,
         original_image):
 
     render_img = None
 
-    cmap = plt.get_cmap('rainbow')
-    colors = [cmap(i) for i in np.linspace(0, 1, num_person + 2)]
+    color_map = plt.get_cmap('rainbow')
+    colors = [color_map(i) for i in np.linspace(0, 1, num_person + 2)]
     colors = [(c[2], c[1], c[0]) for c in colors]
 
     people_renders = []
@@ -77,14 +77,14 @@ def save_mesh_rendering_v2(
     for person_id in range(num_person):
 
         orig_cam = convert_crop_cam_to_orig_img(
-            cam=cam[person_id:person_id+1].detach().cpu().numpy(),
+            cam=cameras[person_id:person_id+1].detach().cpu().numpy(),
             bbox=boxes[person_id:person_id+1],
             img_width=orig_width,
             img_height=orig_height
         )
 
         render_img = renderer.render(
-                verts=verts[person_id],
+                verts=vertices_batch[person_id],
                 cam=orig_cam[0],
                 color=colors[person_id],
             )

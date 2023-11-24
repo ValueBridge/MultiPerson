@@ -1,7 +1,7 @@
 SAVE_FOLDER:
-  split_images_folder: output/split_images
-  pose_results_folder: output/pose_results
-  mesh_results_folder: output/mesh_results
+  split_images_folder: /tmp/split_images
+  pose_results_folder: /tmp/pose_results
+  mesh_results_folder: /tmp/mesh_results
 
 YOLO:
   target_height: 576
