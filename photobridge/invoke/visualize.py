@@ -20,9 +20,9 @@ def visualize_mesh_predictions(_context, config_path):
     os.environ['PYOPENGL_PLATFORM'] = 'osmesa'
 
     import cv2
+    import icecream
     import numpy as np
     import shutil
-
     import torch
 
     import YOLOv4.tool.torch_utils
@@ -37,6 +37,8 @@ def visualize_mesh_predictions(_context, config_path):
 
     import photobridge.utilities
 
+    shutil.rmtree("/tmp", ignore_errors=True)
+
     config = photobridge.utilities.read_yaml(config_path)
 
     image_path = config.demo.image_path
@@ -44,7 +46,8 @@ def visualize_mesh_predictions(_context, config_path):
 
     demo_cfg = lib.utils.file_utils.update_config(demo_config_path)
 
-    shutil.rmtree(demo_cfg.SAVE_FOLDER["mesh_results_folder"], ignore_errors=True)
+    for folder in demo_cfg.SAVE_FOLDER.values():
+        shutil.rmtree(folder, ignore_errors=True)
 
     namesfile = demo_cfg.YOLO.namesfile
     height = demo_cfg.YOLO.target_height
@@ -58,10 +61,10 @@ def visualize_mesh_predictions(_context, config_path):
         lib.utils.model_utils.create_all_network(demo_cfg)
 
     split_images_folder, pose_results_folder, \
-    mesh_results_folder = lib.utils.file_utils.make_folder(demo_cfg, image_path)
+    mesh_results_folder = lib.utils.file_utils.make_folder_v2(demo_cfg)
 
-    orig_img = cv2.imread(image_path)
-    orig_height, orig_width = orig_img.shape[:2]
+    original_img = cv2.imread(image_path)
+    orig_height, orig_width = original_img.shape[:2]
 
     # renderer = lib.utils.renderer.Renderer(smpl=smpl_layer, resolution=(orig_width, orig_height), orig_img=True)
 
@@ -73,20 +76,23 @@ def visualize_mesh_predictions(_context, config_path):
     # Optional inference sizes:
     #   Hight in {320, 416, 512, 608, ... 320 + 96 * n}
     #   Width in {320, 416, 512, 608, ... 320 + 96 * m}
-    yolo_input_img = cv2.resize(orig_img, (width, height))
+    yolo_input_img = cv2.resize(original_img, (width, height))
     yolo_input_img = cv2.cvtColor(yolo_input_img, cv2.COLOR_BGR2RGB)
 
     # This 'for' loop is for speed check
     # Because the first iteration is usually longer
     for i in range(2):
-        boxes = YOLOv4.tool.torch_utils.do_detect(yolo, yolo_input_img, 0.4, 0.6, use_cuda=True)
+        category_boxes = YOLOv4.tool.torch_utils.do_detect(yolo, yolo_input_img, 0.4, 0.6, use_cuda=True)
 
     class_names = YOLOv4.tool.utils.load_class_names(namesfile)
 
-    img_patch_list, refined_boxes, trans_invs = lib.utils.img_utils.split_boxes_cv2(
-        orig_img, boxes[0], split_images_folder, class_names)
+    img_patch_list, refined_people_center_boxes, inverse_transforms = lib.utils.img_utils.split_boxes_cv2(
+        img=original_img,
+        boxes=category_boxes[0],
+        save_folder=split_images_folder,
+        class_names=class_names)
 
-    refined_boxes = np.array(refined_boxes)
+    refined_people_center_boxes = np.array(refined_people_center_boxes)
 
     num_person = len(img_patch_list)
     num_person = min(num_person, max_num_person)
@@ -100,6 +106,9 @@ def visualize_mesh_predictions(_context, config_path):
     for person_id, img_patch in enumerate(img_patch_list[:num_person]):
 
         img_plot, img_pe_input, intrinsic = lib.utils.input_utils.get_pose_estimator_input(img_patch, FLAGS)
+
+        cv2.imwrite(f"/tmp/img_patch_{person_id}.jpg", img_patch)
+        cv2.imwrite(f"/tmp/img_plot_{person_id}.jpg", img_plot)
 
         with torch.no_grad():
 
@@ -122,19 +131,24 @@ def visualize_mesh_predictions(_context, config_path):
         rot6d_dump[0][person_id] = rot6d_ik_net[0]
         betas_dump[0][person_id] = betas_ik_net[0]
 
-        with torch.no_grad():
+    with torch.no_grad():
 
-            refined_rot6d, refined_betas, refined_cam = smplTR(feature_dump, rot6d_dump, betas_dump)
+        refined_rot6d, refined_betas, refined_cam = smplTR(feature_dump, rot6d_dump, betas_dump)
 
-            axis_angle, rot6d, betas, cam, verts, faces = lib.utils.output_utils.process_output(
-                smpl_layer, refined_rot6d, refined_betas, refined_cam)
+        axis_angle, rot6d, betas, cameras, vertices_batch, faces_batch = lib.utils.output_utils.process_output(
+            smpl_layer, refined_rot6d, refined_betas, refined_cam)
 
-        num_person = refined_boxes.shape[0]
+    num_person = refined_people_center_boxes.shape[0]
 
-        lib.utils.output_utils.save_mesh_obj(verts, faces, num_person, mesh_results_folder)
+    lib.utils.output_utils.save_mesh_obj(vertices_batch, faces_batch, num_person, mesh_results_folder)
 
-        # lib.utils.output_utils.save_mesh_rendering(
-        #     renderer, verts, refined_boxes, cam, orig_height, orig_width, num_person, mesh_results_folder)
-
-        lib.utils.output_utils.save_mesh_rendering_v2(
-            renderer, verts, refined_boxes, cam, orig_height, orig_width, num_person, mesh_results_folder, orig_img)
+    lib.utils.output_utils.save_mesh_rendering_v2(
+        renderer=renderer,
+        vertices_batch=vertices_batch,
+        boxes=refined_people_center_boxes,
+        cameras=cameras,
+        orig_height=orig_height,
+        orig_width=orig_width,
+        num_person=num_person,
+        mesh_results_folder=mesh_results_folder,
+        original_image=original_img)
