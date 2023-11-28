@@ -65,6 +65,24 @@ def save_mesh_rendering(renderer, verts, boxes, cam, orig_height, orig_width, nu
     cv2.imwrite(osp.join(mesh_results_folder, f"mesh.jpg"), render_img)
 
 
+def get_mesh_rendering(renderer, camera, image_width, image_height, vertices, color, person_box) -> np.ndarray:
+
+    orig_cam = convert_crop_cam_to_orig_img(
+        camera=camera,
+        bbox=np.array([person_box]),
+        img_width=image_width,
+        img_height=image_height
+    )
+
+    render_img = renderer.render(
+        verts=vertices,
+        cam=orig_cam[0],
+        color=color,
+    )
+
+    return render_img
+
+
 def save_mesh_rendering_v2(
         renderer, vertices_batch, boxes, cameras, orig_height, orig_width, num_person, mesh_results_folder,
         original_image, inverse_transforms, j2ds_per_person, edges_per_person):
@@ -77,18 +95,14 @@ def save_mesh_rendering_v2(
 
     for person_id in range(num_person):
 
-        orig_cam = convert_crop_cam_to_orig_img(
+        render_img = get_mesh_rendering(
+            renderer=renderer,
             camera=cameras[person_id:person_id+1].detach().cpu().numpy(),
-            bbox=boxes[person_id:person_id+1],
-            img_width=orig_width,
-            img_height=orig_height
-        )
-
-        render_img = renderer.render(
-                verts=vertices_batch[person_id],
-                cam=orig_cam[0],
-                color=colors[person_id],
-            )
+            image_width=orig_width,
+            image_height=orig_height,
+            vertices=vertices_batch[person_id],
+            color=colors[person_id],
+            person_box=boxes[person_id])
 
         people_renders.append(render_img)
 
@@ -100,10 +114,7 @@ def save_mesh_rendering_v2(
     for person_render in people_renders:
 
         mask = (person_render[:, :, -1] > 0)[:, :, np.newaxis]
-
         composite_renders_image = np.clip(0, 255, ((1 - mask) *composite_renders_image) + person_render)
-
-    # composite_renders_image = np.clip(0, 255, np.sum(people_renders, axis=0))
 
     cv2.imwrite(osp.join(mesh_results_folder, f"mesh.jpg"), composite_renders_image)
 
