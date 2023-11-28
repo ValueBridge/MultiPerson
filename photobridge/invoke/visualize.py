@@ -35,6 +35,7 @@ def visualize_mesh_predictions(_context, config_path):
     import lib.utils.output_utils
     import lib.utils.renderer
 
+    import photobridge.processing
     import photobridge.utilities
 
     shutil.rmtree("/tmp", ignore_errors=True)
@@ -101,7 +102,7 @@ def visualize_mesh_predictions(_context, config_path):
 
     for person_id, img_patch in enumerate(img_patch_list[:num_person]):
 
-        img_plot, img_pe_input, intrinsic = lib.utils.input_utils.get_pose_estimator_input(img_patch, FLAGS)
+        img_plot, img_pe_input, intrinsic = photobridge.processing.get_pose_estimator_input(img_patch, FLAGS)
 
         cv2.imwrite(f"/tmp/img_patch_{person_id}.jpg", img_patch)
         cv2.imwrite(f"/tmp/img_plot_{person_id}.jpg", img_plot)
@@ -157,3 +158,45 @@ def visualize_mesh_predictions(_context, config_path):
         inverse_transforms=inverse_transforms,
         j2ds_per_person=j2ds_per_person,
         edges_per_person=edges_per_person)
+
+    # Draw markers around head, pelvis and chest
+    for person_id in range(num_person):
+
+        j2d_in_local_coordinates = j2ds_per_person[person_id]
+        edges = edges_per_person[person_id]
+
+        # Add a column of ones to j2d
+        j2d_in_local_coordinates = np.concatenate(
+            [j2d_in_local_coordinates, np.ones((j2d_in_local_coordinates.shape[0], 1))],
+            axis=1)
+
+        # Convert j2d to original image coordinates using inverse_transform
+        j2d_in_original_image_coordinates = np.matmul(j2d_in_local_coordinates, inverse_transforms[person_id].T)
+
+        colors = ((0, 0, 255), (0, 255, 0), (255, 0, 0))
+
+        # Get mesh rendering for target person
+        mesh_rendering = lib.utils.output_utils.get_mesh_rendering(
+            renderer=renderer,
+            camera=cameras[person_id:person_id+1].detach().cpu().numpy(),
+            image_width=orig_width,
+            image_height=orig_height,
+            vertices=vertices_batch[person_id],
+            color=colors[person_id],
+            person_box=transformed_people_center_boxes[person_id])
+
+        transformed_mesh_rendering = photobridge.processing.get_adjusted_mesh_rendering(
+            pose_estimator=pose_estimator,
+            joints_coordinates=j2d_in_original_image_coordinates,
+            mesh_rendering=mesh_rendering,
+            pose_estimation_flags=FLAGS)
+
+        cv2.imwrite(
+            f"/tmp/overlay_transformed_mesh_rendering_{person_id}.jpg",
+            photobridge.processing.get_mesh_overlay(original_img, transformed_mesh_rendering)
+        )
+
+        cv2.imwrite(
+            f"/tmp/overlay_original_mesh_rendering_{person_id}.jpg",
+            photobridge.processing.get_mesh_overlay(original_img, mesh_rendering)
+        )
