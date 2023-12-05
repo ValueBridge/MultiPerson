@@ -310,11 +310,16 @@ def visualize_mesh_predictions_over_batch_of_data(_context, config_path):
 
         num_person = min(len(img_patch_list), max_num_person)
 
-        joint_marker_size = int(min([orig_width, orig_height]) / 100)
+        joint_marker_size = int(min([orig_width, orig_height]) / 150)
+        pose_line_thickness = int(min([orig_width, orig_height]) / 250)
 
         for person_id, img_patch in enumerate(img_patch_list[:num_person]):
 
             path_stem = f"/tmp/{str(path_index).zfill(2)}_{str(person_id).zfill(2)}_"
+
+            cv2.imwrite(
+                path_stem + "_a_original_image.jpg",
+                original_img)
 
             _, img_pe_input, intrinsic = photobridge.processing.get_pose_estimator_input(img_patch, FLAGS)
 
@@ -331,13 +336,17 @@ def visualize_mesh_predictions_over_batch_of_data(_context, config_path):
             j2d_in_original_image_coordinates = np.matmul(j2d_in_local_coordinates, inverse_transforms[person_id].T)
 
             pose_estimation_overlay = lib.utils.output_utils.draw_2d_joint(
-                original_img, j2d_in_original_image_coordinates, edges, thickness=8)
+                original_img, j2d_in_original_image_coordinates, edges,
+                thickness=pose_line_thickness
+            )
 
             pose_estimation_overlay = photobridge.processing.draw_upper_body_joints(
-                pose_estimation_overlay, j2d_in_original_image_coordinates, thickness=32)
+                pose_estimation_overlay, j2d_in_original_image_coordinates,
+                thickness=joint_marker_size
+            )
 
             cv2.imwrite(
-                path_stem + "_a_pose_estimation_overlay.jpg",
+                path_stem + "_b_pose_estimation_overlay.jpg",
                 pose_estimation_overlay)
 
             feature_dump = torch.zeros(1, max_num_person, 2048).float().cuda()
@@ -394,10 +403,14 @@ def visualize_mesh_predictions_over_batch_of_data(_context, config_path):
                 pose_estimation_flags=FLAGS)
 
             mesh_overlay = lib.utils.output_utils.draw_2d_joint(
-                mesh_overlay.astype(np.uint8), mesh_pose_estimation, mesh_pose_estimation_edges, thickness=8)
+                mesh_overlay.astype(np.uint8), mesh_pose_estimation, mesh_pose_estimation_edges,
+                thickness=pose_line_thickness
+            )
 
             mesh_overlay = photobridge.processing.draw_upper_body_joints(
-                mesh_overlay, mesh_pose_estimation, thickness=joint_marker_size)
+                mesh_overlay, mesh_pose_estimation,
+                thickness=joint_marker_size
+            )
 
             mesh_mask = (mesh_rendering[:, :, -1] > 0)
 
@@ -416,13 +429,16 @@ def visualize_mesh_predictions_over_batch_of_data(_context, config_path):
                 pose_estimation_flags=FLAGS)
 
             mesh_overlay = lib.utils.output_utils.draw_2d_joint(
-                mesh_overlay.astype(np.uint8), mesh_pose_estimation, mesh_pose_estimation_edges, thickness=8)
+                mesh_overlay.astype(np.uint8), mesh_pose_estimation, mesh_pose_estimation_edges,
+                thickness=pose_line_thickness
+            )
 
             mesh_overlay = photobridge.processing.draw_upper_body_joints(
-                mesh_overlay, mesh_pose_estimation, thickness=joint_marker_size)
+                mesh_overlay, mesh_pose_estimation,
+                thickness=joint_marker_size)
 
             cv2.imwrite(
-                path_stem + "_b_original_mesh_overlay.jpg",
+                path_stem + "_c_original_mesh_overlay.jpg",
                 mesh_overlay)
 
             transformed_mesh_rendering = photobridge.processing.get_adjusted_mesh_rendering(
@@ -436,6 +452,6 @@ def visualize_mesh_predictions_over_batch_of_data(_context, config_path):
                 original_img, transformed_mesh_rendering)
 
             cv2.imwrite(
-                path_stem + "_c_transformed_mesh_overlay.jpg",
+                path_stem + "_d_transformed_mesh_overlay.jpg",
                 transformed_mesh_rendering
             )
