@@ -6,6 +6,7 @@ import typing
 
 import cv2
 import icecream
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
@@ -78,22 +79,28 @@ def get_pose_transformation_matrix(source_joints: np.ndarray, destination_joints
         destination_joints[joints_indices[2], :]
     ], dtype=np.float32)
 
-    mesh_transformation_matrix = cv2.getAffineTransform(source_points, destination_points)
-
     manual_mesh_transformation_matrix = np.zeros((2, 3), dtype=np.float32)
 
     mean_shift = np.mean(destination_points - source_points, axis=0)
 
+    # Compute x scale change by looking at ratio of distances between shoulders
+    x_scale = (
+        np.linalg.norm(destination_joints[17, :] - destination_joints[16, :]) /
+        np.linalg.norm(source_joints[17, :] - source_joints[16, :])
+    )
+
+    # Compute y scale change by looking at rion of distances between head and chest
+    y_scale = (
+        np.linalg.norm(destination_joints[6, :] - destination_joints[15, :]) /
+        np.linalg.norm(source_joints[6, :] - source_joints[15, :])
+    )
+
     # Fix scale
-    manual_mesh_transformation_matrix[0, 0] = 1
-    manual_mesh_transformation_matrix[1, 1] = 1
-    # manual_mesh_transformation_matrix[0, 0] = mesh_transformation_matrix[0, 0]
-    # manual_mesh_transformation_matrix[1, 1] = mesh_transformation_matrix[1, 1]
+    manual_mesh_transformation_matrix[0, 0] = x_scale
+    manual_mesh_transformation_matrix[1, 1] = y_scale
 
     manual_mesh_transformation_matrix[0, 2] = mean_shift[0]
     manual_mesh_transformation_matrix[1, 2] = mean_shift[1]
-
-    manual_mesh_transformation_matrix = mesh_transformation_matrix
 
     return manual_mesh_transformation_matrix
 
@@ -263,8 +270,11 @@ def draw_upper_body_joints(image, joints_coordinates, thickness=8):
         6, 9, 12, 15, 16, 17
     ]
 
+    color_map = plt.get_cmap('rainbow')
+    colors = [255 * np.array(color) for color in color_map(np.linspace(0, 1, len(joints_indices)))]
+
     # Draw joints
-    for joint_id in joints_indices:
+    for index, joint_id in enumerate(joints_indices):
 
         joint = joints_coordinates[joint_id, :]
 
@@ -272,7 +282,7 @@ def draw_upper_body_joints(image, joints_coordinates, thickness=8):
             annotated_image,
             (int(joint[0]), int(joint[1])),
             thickness,
-            (0, 0, 255),
+            colors[index],
             -1)
 
     return annotated_image
