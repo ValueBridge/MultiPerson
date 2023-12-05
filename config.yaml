@@ -6,5 +6,7 @@ logging_path: "/tmp/log.html"
 
 demo:
   # image_path: "/data/test_images_modified/100809462_target.jpg"
-  # image_path: "/data/test_images/103002334_original.jpg"
-  image_path: "./demo_image/demo4.jpg"
+  image_path: "/data/test_images/106050921_original.jpg"
+  # image_path: "./demo_image/demo3.jpg"
+
+  images_directory: "/data/body_retouched_by_vb_editor/"
