@@ -10,3 +10,4 @@ demo:
   # image_path: "./demo_image/demo3.jpg"
 
   images_directory: "/data/body_retouched_by_vb_editor/"
+  # images_directory: "/data/test_images/"

@@ -42,68 +42,30 @@ def get_pose_estimator_input(img_patch, FLAGS):
     return img_patch_resize_256, img_pe_input, intrinsic
 
 
-def get_pose_transformation_matrix(source_joints: np.ndarray, destination_joints: np.ndarray) -> np.ndarray:
+def get_pose_transformation_matrix(
+    source_joints: np.ndarray, destination_joints: np.ndarray, image_shape: tuple) -> np.ndarray:
     """
     Get a transformation matrix to transform source_joints to destination_joints
 
     Args:
         source_joints (np.ndarray): matrix of source joints coordinates
         destination_joints (np.ndarray): matrix of destination joints coordinates
+        image_shape (tuple): image shape (height, width)
 
     Returns:
         np.ndarray: transformation matrix
     """
 
-    joints_indices = [
-        15,  # head
-        6,  # chest
-        9  # chest
-    ]
+    indices = list(get_optimal_transformation_mapping_indices(
+        source_points=destination_joints,
+        destination_points=source_joints,
+        image_shape=image_shape
+    ))
 
-    # joints_indices = [
-    #     15,  # head
-    #     16,  # chest
-    #     17  # chest
-    # ]
-
-    # Compute transformation between original joints estimate and joints estimate from mesh.
-    # Use head and shoulders for reference points
-    source_points = np.array([
-        source_joints[joints_indices[0], :],
-        source_joints[joints_indices[1], :],
-        source_joints[joints_indices[2], :]
-    ], dtype=np.float32)
-
-    destination_points = np.array([
-        destination_joints[joints_indices[0], :],
-        destination_joints[joints_indices[1], :],
-        destination_joints[joints_indices[2], :]
-    ], dtype=np.float32)
-
-    manual_mesh_transformation_matrix = np.zeros((2, 3), dtype=np.float32)
-
-    mean_shift = np.mean(destination_points - source_points, axis=0)
-
-    # Compute x scale change by looking at ratio of distances between shoulders
-    x_scale = (
-        np.linalg.norm(destination_joints[17, :] - destination_joints[16, :]) /
-        np.linalg.norm(source_joints[17, :] - source_joints[16, :])
+    return cv2.getAffineTransform(
+        source_joints[indices].astype(np.float32),
+        destination_joints[indices].astype(np.float32)
     )
-
-    # Compute y scale change by looking at rion of distances between head and chest
-    y_scale = (
-        np.linalg.norm(destination_joints[6, :] - destination_joints[15, :]) /
-        np.linalg.norm(source_joints[6, :] - source_joints[15, :])
-    )
-
-    # Fix scale
-    manual_mesh_transformation_matrix[0, 0] = x_scale
-    manual_mesh_transformation_matrix[1, 1] = y_scale
-
-    manual_mesh_transformation_matrix[0, 2] = mean_shift[0]
-    manual_mesh_transformation_matrix[1, 2] = mean_shift[1]
-
-    return manual_mesh_transformation_matrix
 
 
 def get_ransac_pose_transformation_matrix(source_joints: np.ndarray, destination_joints: np.ndarray) -> np.ndarray:
@@ -157,21 +119,23 @@ def get_adjusted_mesh_rendering(pose_estimator, joints_coordinates, mesh_renderi
         pose_estimator=pose_estimator,
         pose_estimation_flags=pose_estimation_flags)
 
-    # mesh_transformation_matrix = get_pose_transformation_matrix(
-    #     source_joints=mesh_joints_estimation, destination_joints=joints_coordinates)
+    mesh_transformation_matrix = get_pose_transformation_matrix(
+        source_joints=mesh_joints_estimation,
+        destination_joints=joints_coordinates,
+        image_shape=image.shape[:2])
 
-    # transformed_mesh_rendering = cv2.warpAffine(
-    #     mesh_rendering, mesh_transformation_matrix,
-    #     (mesh_rendering.shape[1], mesh_rendering.shape[0]),
-    #     flags=cv2.INTER_LINEAR)
-
-    mesh_transformation_matrix = get_ransac_pose_transformation_matrix(
-        source_joints=mesh_joints_estimation, destination_joints=joints_coordinates)
-
-    transformed_mesh_rendering = cv2.warpPerspective(
+    transformed_mesh_rendering = cv2.warpAffine(
         mesh_rendering, mesh_transformation_matrix,
         (mesh_rendering.shape[1], mesh_rendering.shape[0]),
         flags=cv2.INTER_LINEAR)
+
+    # mesh_transformation_matrix = get_ransac_pose_transformation_matrix(
+    #     source_joints=mesh_joints_estimation, destination_joints=joints_coordinates)
+
+    # transformed_mesh_rendering = cv2.warpPerspective(
+    #     mesh_rendering, mesh_transformation_matrix,
+    #     (mesh_rendering.shape[1], mesh_rendering.shape[0]),
+    #     flags=cv2.INTER_LINEAR)
 
     # return transformed_mesh_rendering
     return transformed_mesh_rendering
@@ -187,7 +151,12 @@ def get_mesh_overlay(image, mesh_rendering):
     """
 
     mask = (mesh_rendering[:, :, -1] > 0)[:, :, np.newaxis]
-    return np.clip(0, 255, ((1 - mask) * image) + mesh_rendering)
+    mask = np.clip(0, 255, ((1 - mask) * image) + mesh_rendering).astype(np.uint8)
+
+    # Create a semi-transparent image by blending the original image and the mask
+    return cv2.addWeighted(image, 0.6, mask, 0.4, 0)
+
+
 
 
 def get_pose_estimation(
@@ -393,7 +362,7 @@ def get_optimal_transformation_mapping_indices(
 
     max_areas = horizontal_distances * vertical_distances
 
-    # We want to drop from considration any indices for which source or destination points fall outside of the image
+    # We want to drop from consideration any indices for which source or destination points fall outside of the image
 
     invalid_source_points_flags = np.logical_or(
         np.logical_or(source_points[:, 0] < 0, source_points[:, 0] >= image_shape[1]),
@@ -405,12 +374,9 @@ def get_optimal_transformation_mapping_indices(
         np.logical_or(destination_points[:, 1] < 0, destination_points[:, 1] >= image_shape[0])
     )
 
-    invalid_source_points_indices = np.where(invalid_source_points_flags)[0]
-    invalid_destination_points_indices = np.where(invalid_destination_points_flags)[0]
-
     invalid_points_indices = np.unique(np.concatenate([
-        invalid_source_points_indices,
-        invalid_destination_points_indices
+        np.where(invalid_source_points_flags)[0],
+        np.where(invalid_destination_points_flags)[0]
     ]))
 
     invalid_triplets_flags = np.isin(indices_triplets, invalid_points_indices).any(axis=1)
