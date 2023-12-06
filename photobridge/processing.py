@@ -2,6 +2,7 @@
 Module with processing functions
 """
 
+import itertools
 import typing
 
 import cv2
@@ -350,3 +351,72 @@ def split_boxes_cv2(img, relative_boxes, class_names):
                 inverse_transforms.append(inverse_transform)
 
     return cropped_images, refined_boxes, inverse_transforms
+
+
+def get_optimal_transformation_mapping_indices(
+        source_points: np.ndarray, destination_points: np.ndarray, image_shape: tuple) -> typing.Set[int]:
+    """
+    Given a set of source points and matching destination points, return a 3 elements list of indices
+    for points that are judged to be best candidates for computing a transformation matrix between
+    source and destination points.
+
+    Criteria for choosing the best points are:
+    - both source and destination points must be inside the image
+    - the distance between triplet source points is maximized
+
+    Args:
+        source_points (np.ndarray): 2D array of source points (x, y)
+        destination_points (np.ndarray): 2D array of destination points (x, y)
+        image_shape (tuple): image shape (height, width)
+
+    Returns:
+        typing.Set[int]: set of indices to use for computing transformation matrix
+        between source and destination points
+    """
+
+    # Compute combinations of unique points indices
+    indices_triplets = np.array(list(itertools.combinations(range(len(source_points)), 3)))
+
+    # Compute max horizontal distance between points from each triplet
+    horizontal_distances = np.max(np.abs(np.array([
+        source_points[indices_triplets[:, 0], 0] - source_points[indices_triplets[:, 1], 0],
+        source_points[indices_triplets[:, 0], 0] - source_points[indices_triplets[:, 2], 0],
+        source_points[indices_triplets[:, 1], 0] - source_points[indices_triplets[:, 2], 0]
+    ])).T, axis=1)
+
+    # Compute max vertical distances between points from each triplet
+    vertical_distances = np.max(np.abs(np.array([
+        source_points[indices_triplets[:, 0], 1] - source_points[indices_triplets[:, 1], 1],
+        source_points[indices_triplets[:, 0], 1] - source_points[indices_triplets[:, 2], 1],
+        source_points[indices_triplets[:, 1], 1] - source_points[indices_triplets[:, 2], 1]
+    ])).T, axis=1)
+
+    max_areas = horizontal_distances * vertical_distances
+
+    # We want to drop from considration any indices for which source or destination points fall outside of the image
+
+    invalid_source_points_flags = np.logical_or(
+        np.logical_or(source_points[:, 0] < 0, source_points[:, 0] >= image_shape[1]),
+        np.logical_or(source_points[:, 1] < 0, source_points[:, 1] >= image_shape[0])
+    )
+
+    invalid_destination_points_flags = np.logical_or(
+        np.logical_or(destination_points[:, 0] < 0, destination_points[:, 0] >= image_shape[1]),
+        np.logical_or(destination_points[:, 1] < 0, destination_points[:, 1] >= image_shape[0])
+    )
+
+    invalid_source_points_indices = np.where(invalid_source_points_flags)[0]
+    invalid_destination_points_indices = np.where(invalid_destination_points_flags)[0]
+
+    invalid_points_indices = np.unique(np.concatenate([
+        invalid_source_points_indices,
+        invalid_destination_points_indices
+    ]))
+
+    invalid_triplets_flags = np.isin(indices_triplets, invalid_points_indices).any(axis=1)
+
+    # Set max area to -1 for triplets with invalid points, so they are not considered
+    max_areas[invalid_triplets_flags] = -1
+
+    # Return indices of points in combination with largest area
+    return set(indices_triplets[np.argmax(max_areas)])
