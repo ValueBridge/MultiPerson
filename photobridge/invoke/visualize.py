@@ -257,6 +257,7 @@ def visualize_mesh_predictions_over_batch_of_data(_context, config_path):
     import lib.utils.output_utils
     import lib.utils.renderer
 
+    import photobridge.analysis
     import photobridge.processing
     import photobridge.utilities
 
@@ -310,148 +311,25 @@ def visualize_mesh_predictions_over_batch_of_data(_context, config_path):
 
         num_person = min(len(img_patch_list), max_num_person)
 
-        joint_marker_size = int(min([orig_width, orig_height]) / 150)
-        pose_line_thickness = int(min([orig_width, orig_height]) / 250)
-
         for person_id, img_patch in enumerate(img_patch_list[:num_person]):
 
-            path_stem = f"/tmp/{str(path_index).zfill(2)}_{str(person_id).zfill(2)}_"
-
-            cv2.imwrite(
-                path_stem + "_a_original_image.jpg",
-                original_img)
-
-            _, img_pe_input, intrinsic = photobridge.processing.get_pose_estimator_input(img_patch, FLAGS)
-
-            j2d_in_local_coordinates, _, j3d_abs, _, edges = pose_estimator(img_pe_input, intrinsic, intrinsic)
-
-            j2d_in_local_coordinates = np.squeeze(j2d_in_local_coordinates.detach().cpu().numpy())
-
-            # Add a column of ones to j2d
-            j2d_in_local_coordinates = np.concatenate(
-                [j2d_in_local_coordinates, np.ones((j2d_in_local_coordinates.shape[0], 1))],
-                axis=1)
-
-            # Convert j2d to original image coordinates using inverse_transform
-            j2d_in_original_image_coordinates = np.matmul(j2d_in_local_coordinates, inverse_transforms[person_id].T)
-
-            pose_estimation_overlay = lib.utils.output_utils.draw_2d_joint(
-                original_img, j2d_in_original_image_coordinates, edges,
-                thickness=pose_line_thickness
-            )
-
-            pose_estimation_overlay = photobridge.processing.draw_upper_body_joints(
-                pose_estimation_overlay, j2d_in_original_image_coordinates,
-                thickness=joint_marker_size
-            )
-
-            cv2.imwrite(
-                path_stem + "_b_pose_estimation_overlay.jpg",
-                pose_estimation_overlay)
-
-            feature_dump = torch.zeros(1, max_num_person, 2048).float().cuda()
-            rot6d_dump = torch.zeros(1, max_num_person, 24, 6).float().cuda()
-            betas_dump = torch.zeros(1, max_num_person, 10).float().cuda()
-
-            img_ik_input = lib.utils.input_utils.get_ik_input(img_patch, demo_cfg, FLAGS)
-            j3ds_abs_meter = j3d_abs / 1000
-            ik_net_output = ik_net(img_ik_input, j3ds_abs_meter)
-            rot6d_ik_net = ik_net_output.pred_rot6d
-            betas_ik_net = ik_net_output.pred_shape
-
-            img_fe_input = lib.utils.input_utils.get_feature_extractor_input(img_patch)
-
-            img_feature = feature_extractor.extract(img_fe_input)
-
-            feature_dump[0][person_id] = img_feature[0]
-            rot6d_dump[0][person_id] = rot6d_ik_net[0]
-            betas_dump[0][person_id] = betas_ik_net[0]
-
-            with torch.no_grad():
-
-                refined_rot6d, refined_betas, refined_cam = smplTR(feature_dump, rot6d_dump, betas_dump)
-
-                axis_angle, rot6d, betas, cameras, vertices_batch, faces_batch = lib.utils.output_utils.process_output(
-                    smpl_layer, refined_rot6d, refined_betas, refined_cam)
-
-            # Get mesh rendering for target person
-            mesh_rendering = lib.utils.output_utils.get_mesh_rendering(
+            photobridge.analysis.MeshAlignmentAnalyzer(
+                log_dir="/tmp",
+                image=original_img,
+                mesh_render=None,
+                path_index=path_index,
+                person_id=person_id,
+                pose_estimator=pose_estimator,
+                img_patch=img_patch,
+                flags=FLAGS,
+                inverse_transform=inverse_transforms[person_id],
+                max_num_person=max_num_person,
+                demo_cfg=demo_cfg,
                 renderer=renderer,
-                camera=cameras[person_id:person_id+1].detach().cpu().numpy(),
-                image_width=orig_width,
-                image_height=orig_height,
-                vertices=vertices_batch[person_id],
-                color=colors[person_id],
-                person_box=transformed_people_center_boxes[person_id])
-
-            mesh_overlay = photobridge.processing.get_mesh_overlay(original_img, mesh_rendering)
-
-            mesh_mask = (mesh_rendering[:, :, -1] > 0)
-
-            # Get coordinates of mesh box
-            mesh_box = [
-                np.where(mesh_mask)[1].min(),
-                np.where(mesh_mask)[0].min(),
-                np.where(mesh_mask)[1].max(),
-                np.where(mesh_mask)[0].max()
-            ]
-
-            mesh_pose_estimation, mesh_pose_estimation_edges = photobridge.processing.get_pose_estimation(
-                image=mesh_overlay,
-                bounding_box=mesh_box,
-                pose_estimator=pose_estimator,
-                pose_estimation_flags=FLAGS)
-
-            mesh_overlay = lib.utils.output_utils.draw_2d_joint(
-                mesh_overlay.astype(np.uint8), mesh_pose_estimation, mesh_pose_estimation_edges,
-                thickness=pose_line_thickness
-            )
-
-            mesh_overlay = photobridge.processing.draw_upper_body_joints(
-                mesh_overlay, mesh_pose_estimation,
-                thickness=joint_marker_size
-            )
-
-            mesh_mask = (mesh_rendering[:, :, -1] > 0)
-
-            # Get coordinates of mesh box
-            mesh_box = [
-                np.where(mesh_mask)[1].min(),
-                np.where(mesh_mask)[0].min(),
-                np.where(mesh_mask)[1].max(),
-                np.where(mesh_mask)[0].max()
-            ]
-
-            mesh_pose_estimation, mesh_pose_estimation_edges = photobridge.processing.get_pose_estimation(
-                image=mesh_overlay,
-                bounding_box=mesh_box,
-                pose_estimator=pose_estimator,
-                pose_estimation_flags=FLAGS)
-
-            mesh_overlay = lib.utils.output_utils.draw_2d_joint(
-                mesh_overlay.astype(np.uint8), mesh_pose_estimation, mesh_pose_estimation_edges,
-                thickness=pose_line_thickness
-            )
-
-            mesh_overlay = photobridge.processing.draw_upper_body_joints(
-                mesh_overlay, mesh_pose_estimation,
-                thickness=joint_marker_size)
-
-            cv2.imwrite(
-                path_stem + "_c_original_mesh_overlay.jpg",
-                mesh_overlay)
-
-            transformed_mesh_rendering = photobridge.processing.get_adjusted_mesh_rendering(
-                pose_estimator=pose_estimator,
-                joints_coordinates=j2d_in_original_image_coordinates,
-                mesh_rendering=mesh_rendering,
-                pose_estimation_flags=FLAGS,
-                image=original_img)
-
-            transformed_mesh_rendering = photobridge.processing.get_mesh_overlay(
-                original_img, transformed_mesh_rendering)
-
-            cv2.imwrite(
-                path_stem + "_d_transformed_mesh_overlay.jpg",
-                transformed_mesh_rendering
-            )
+                smplTR=smplTR,
+                smpl_layer=smpl_layer,
+                feature_extractor=feature_extractor,
+                ik_net=ik_net,
+                mesh_color=colors[person_id],
+                person_box=transformed_people_center_boxes[person_id]
+            ).log_analysis()
